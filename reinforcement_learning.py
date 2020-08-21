@@ -1,8 +1,8 @@
 import scipy.stats as st
 import numpy as np
 import deep_network as dn
+import tensorflow as tf
 
-func_map = {"UCB1": UCB1, "KL_UCB": KL_UCB, "TS_Beta": TS_Beta, "TS_Normal": TS_Normal, "Bayes_UCB": Bayes_UCB}
 
 def UCB1(mu, n, t):
     #typical upper confidence bound algorithm
@@ -13,7 +13,7 @@ def UCB1(mu, n, t):
     return index
 
 
-def KL_UCB(mu, n, t):
+def KL_UCB(mu:np.array, n:np.array, t:int):
     #Kulback Leibler upper confidence bound
 
     ub = np.log10(t) / n
@@ -23,7 +23,7 @@ def KL_UCB(mu, n, t):
         for j in range(mu.shape[1]):
             p = mu[i, j]
             q_tmp = np.arange(p, 1, 0.01)
-            d = [KL_D(p, qi) for qi in q_tmp]
+            d = [_KL_D(p, qi) for qi in q_tmp]
             q[i, j] = d[np.max(np.where(d <= ub[i, j]))]
 
     index = np.argmax(q)
@@ -31,7 +31,7 @@ def KL_UCB(mu, n, t):
     return index
 
 
-def KL_D(p, q):
+def _KL_D(p, q):
     if p == 0:
         return 0
     elif q == 0:
@@ -41,7 +41,7 @@ def KL_D(p, q):
         return d
 
 
-def TS_Beta(success, fail):
+def TS_Beta(success:int, fail:int):
     #thompson sampling based on beta distribution
 
     beta = np.random.beta(success + 1, fail + 1)
@@ -50,7 +50,7 @@ def TS_Beta(success, fail):
     return index
 
 
-def TS_Normal(mu, n):
+def TS_Normal(mu:np.array, n:np.array):
     #thompson sampling based on gaussian distribution
 
     t = n + 1
@@ -61,7 +61,7 @@ def TS_Normal(mu, n):
     return index
 
 
-def Bayes_UCB(t, success, fail):
+def Bayes_UCB(t:int, success:int, fail:int):
     #bayesian UCB using beta distribution
 
     d = 1 - 1 / t
@@ -70,10 +70,9 @@ def Bayes_UCB(t, success, fail):
 
     return index
 
-def train(model, dataset, method, T):
+def Train(model: tf.keras.Model , dataset , method:str, T:int):
 
-    print()
-    rl_function = func_map[method]
+    print("starting training with {} algorithm on {} iterations ...".format(method, T))
 
     if method in ["Bayes_UCB", "TS_Beta"]:
         W = model.layers[-1].get_weights()
@@ -90,16 +89,17 @@ def train(model, dataset, method, T):
             # selecting index exploration/exploitation
             if np.where(n == 0)[0].size == 0 and np.where(n == 0)[1].size == 0:
                 if method == "Bayes_UCB":
-                    index = rl_function(t, success, fail)
+                    index = Bayes_UCB(t, success, fail)
 
                 elif method == "TS_Beta":
-                    index = rl_function(success, fail)
+                    index = TS_Beta(success, fail)
 
                 ind_max = np.array(np.unravel_index(index, success.shape))
                 row = ind_max[0]
                 col = ind_max[1]
 
             else:
+                #every weight should be visited once to get initial distribution
                 row = np.where(n == 0)[0][0]
                 col = np.where(n == 0)[1][0]
 
@@ -128,12 +128,19 @@ def train(model, dataset, method, T):
                 fail[row, col] += 1
                 print("failed")
 
-            n[row, col] = + 1
+            n[row, col] += 1
 
             # initializing the layer to the original trained weights for next round
             model.layers[-1].set_weights(W)
 
-            
+            # saving the results
+            file_name = "result_weights_" + method + ".npy"
+            results = {"n": n, "s": success, "f": fail}
+            np.save(file_name, results)
+
+        return results
+
+
 
     elif method in ["UCB1", "KL_UCB", "TS_Normal"]:
 
@@ -149,14 +156,17 @@ def train(model, dataset, method, T):
 
             # selecting index exploration/exploitation
             if np.where(n == 0)[0].size == 0 and np.where(n == 0)[1].size == 0:
-                if method in ["UCB1", "KL_UCB"]:
-                    index = rl_function(mu, n, t)
+                if method  == "UCB1":
+                    index = UCB1(mu, n, t)
+                elif method == "KL_UCB":
+                    index = KL_UCB(mu, n, t)
                 else:
-                    index = rl_function(mu, n)
+                    index = TS_Normal(mu, n)
                 ind_max = np.array(np.unravel_index(index, n.shape))
                 row = ind_max[0]
                 col = ind_max[1]
             else:
+                #every weight should be visited once to get initial distribution
                 row = np.where(n == 0)[0][0]
                 col = np.where(n == 0)[1][0]
 
@@ -174,6 +184,7 @@ def train(model, dataset, method, T):
             # calculating delta and reward
             delta = loss_base - loss
             reward = max(0, threshold + delta) / norm_const
+            # clipping reward
             if reward >= 1:
                 reward = 0.99
             print("reward:", reward)
@@ -185,4 +196,10 @@ def train(model, dataset, method, T):
             # initializing the layer to the original trained weights for next round
             model.layers[-1].set_weights(W)
 
+            #saving the results
+            file_name = "result_weights_" + method + ".npy"
+            results = {"n": n, "mu": mu}
+            np.save(file_name, results)
+
+        return results
 

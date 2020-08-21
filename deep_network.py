@@ -1,7 +1,8 @@
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.layers import Input, Conv2D, Dense, MaxPool2D, Flatten
-
+import tensorflow as tf
+import matplotlib.pyplot as plt
 
 def Split_Dataset(dataset: tf.data.Dataset, validation_data_fraction: float):
 
@@ -20,7 +21,7 @@ def Split_Dataset(dataset: tf.data.Dataset, validation_data_fraction: float):
     return train_dataset, validation_dataset
 
 
-def Data_Prep(path):
+def Data_Prep(path: str):
     #preparing data for training
     dataset_raw = np.load(path, allow_pickle=True)
     arrays = np.array(dataset_raw[()]["data"])
@@ -29,7 +30,7 @@ def Data_Prep(path):
     arrays -= arrays.mean()
     arrays = arrays / arrays.std()
     if np.isnan(arrays).any() or np.isinf(arrays).any():
-        raise "data have imperfections"
+        raise ValueError("data have imperfections")
     print(arrays.shape)
     labels = dataset_raw[()]["label"]
     labels = np.array([x - np.array(list(set(labels))).min() for x in labels])
@@ -39,7 +40,7 @@ def Data_Prep(path):
     return (arrays, labels)
 
 
-def Load_Data(path):
+def Load_Data(path : str):
 
     #loading data and creating tensorflow dataset
     data, label = Data_Prep(path)
@@ -81,3 +82,62 @@ def Select_Random_Data(train_data):
     train_data.shuffle(1000)
     _, data = Split_Dataset(train_data, 0.1)
     return data
+
+
+def Evaluate_Rl(result: dict, model_path:str, method:str):
+
+    if len(result.keys()) == 2:
+        n = result["n"]
+        reward = result["mu"]
+    elif len(result.keys()) == 3:
+        n = result["n"]
+        success = result["s"]
+        fail = result["f"]
+        reward = success/(success+fail)
+
+
+
+    n2 = n.reshape(-1)
+    mu2 = reward.reshape(-1)
+    plt.figure(figsize=(15, 5))
+    plt.title("Distribution of visits per node for {} algorithm".format(method))
+    plt.ylabel("Number of visits")
+    plt.xlabel("weight in the last layer")
+    plt.bar(np.arange(len(n2)), n2, )
+    plt.figure(figsize=(15, 5))
+    plt.bar(np.arange(len(mu2)), mu2)
+    plt.title("average reward per node for {} algorithm".format(method))
+    plt.ylabel("reward")
+    plt.xlabel("weight in the last layer")
+
+    #sorting the weights based on best average reward
+    indexes = np.unravel_index(np.argsort(reward, axis=None), reward.shape)
+
+    data, label = Data_Prep("/home/fe/khodabakhshandeh/Projects/radar/radar-ml/Python/data/Config G/box_data.npy")
+
+    loss = []
+    accuracy = []
+    for i in range(160):
+        model = tf.keras.models.load_model(model_path)
+        model.evaluate(data, label, verbose=0)
+        W = model.layers[-1].get_weights()
+        W_ = np.copy(W)
+        W_[0][indexes[0][-(i + 1):], indexes[1][-(i + 1):]] = 0
+        model.layers[-1].set_weights(W_)
+        l, acc = model.evaluate(data, label)
+        loss.append(l)
+        accuracy.append(acc)
+
+    x = np.arange(len(accuracy)) / reward.size * 100
+    plt.figure(figsize=(7, 5))
+    plt.plot(x, loss)
+    plt.title("loss value after pruning based on {} algorithm".format(method))
+    plt.ylabel("loss")
+    plt.xlabel("percentage of pruned weights")
+    plt.grid()
+    plt.figure(figsize=(7, 5))
+    plt.plot(x, accuracy)
+    plt.title("accuracy after pruning based on {} algorithm".format(method))
+    plt.ylabel("accuracy")
+    plt.xlabel("precentage of pruned weights")
+    plt.grid()
