@@ -9,7 +9,8 @@ For this test a Convolutional Neural Network has been used, which is trained for
 
 **method**: chosing between one of the methods above <br/>
 **horizon**: default is on 7000<br/>
-**model_path**: if None a network gets trained on the given dataset
+**model_path**: if None a network gets trained on the given dataset<br/>
+**cluster**: set this to False for use on local computer
 
 ## Dependencies
 
@@ -23,3 +24,8 @@ For this test a Convolutional Neural Network has been used, which is trained for
   - pandas=1.0.1
   - python=3.7.6
   - tensorflow-gpu=2.1.0
+
+
+## Example running the program
+
+python main() --horizon 500 --method "KL_UCB" --model_path "model_base.h5" --cluster False 
